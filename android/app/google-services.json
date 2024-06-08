@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "869115506321",
+    "firebase_url": "https://calendertest-354f2-default-rtdb.firebaseio.com",
+    "project_id": "calendertest-354f2",
+    "storage_bucket": "calendertest-354f2.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:869115506321:android:a77691b3916fa88ecad930",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_2"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBqlOnM8sggxbWIpNPO5XQl5RaYcudpcgY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
