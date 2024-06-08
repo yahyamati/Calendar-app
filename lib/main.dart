@@ -42,6 +42,36 @@ class _MyHomePageState extends State<MyHomePage> {
   DateTime _selectedDay = DateTime.now();
   DateTime _focusedDay = DateTime.now();
   TextEditingController _noteController = TextEditingController();
+  Set<DateTime> _datesWithNotes = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMonthNotes();
+  }
+
+  void _loadMonthNotes() {
+    final startOfMonth = DateTime(_focusedDay.year, _focusedDay.month, 1);
+    final endOfMonth = DateTime(_focusedDay.year, _focusedDay.month + 1, 0);
+
+    DatabaseReference ref = FirebaseDatabase.instance.ref(
+        'notes/${_focusedDay.year}/${_focusedDay.month.toString().padLeft(2, '0')}');
+    ref.once().then((DatabaseEvent event) {
+      Map<dynamic, dynamic>? data =
+          event.snapshot.value as Map<dynamic, dynamic>?;
+      if (data != null) {
+        data.forEach((key, value) {
+          int day = int.parse(key);
+          DateTime date = DateTime(_focusedDay.year, _focusedDay.month, day);
+          if (date.isAfter(startOfMonth.subtract(const Duration(days: 1))) &&
+              date.isBefore(endOfMonth.add(const Duration(days: 1)))) {
+            _datesWithNotes.add(date);
+          }
+        });
+        setState(() {});
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -49,7 +79,6 @@ class _MyHomePageState extends State<MyHomePage> {
     super.dispose();
   }
 
-  // Helper function to format dates into parts
   Map<String, String> formatDateTime(DateTime dateTime) {
     return {
       'year': dateTime.year.toString(),
@@ -73,6 +102,10 @@ class _MyHomePageState extends State<MyHomePage> {
         event.snapshot.value as Map<dynamic, dynamic>?;
     setState(() {
       _noteController.text = data?['note'] ?? '';
+      if (data != null && data['note'] != null) {
+        _datesWithNotes.add(
+            DateTime(selectedDay.year, selectedDay.month, selectedDay.day));
+      }
     });
   }
 
@@ -94,6 +127,9 @@ class _MyHomePageState extends State<MyHomePage> {
     }).then((_) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Note saved successfully')));
+      _datesWithNotes.add(
+          DateTime(_selectedDay.year, _selectedDay.month, _selectedDay.day));
+      setState(() {});
     }).catchError((error) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Failed to save note: $error')));
@@ -115,6 +151,32 @@ class _MyHomePageState extends State<MyHomePage> {
             focusedDay: _focusedDay,
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
             onDaySelected: _onDaySelected,
+            onPageChanged: (focusedDay) {
+              // Assuming onPageChanged exists and is triggered on month change
+              if (focusedDay.month != _focusedDay.month ||
+                  focusedDay.year != _focusedDay.year) {
+                _focusedDay = focusedDay;
+                _loadMonthNotes(); // Fetch notes for the new month
+              }
+            },
+            calendarBuilders: CalendarBuilders(
+              defaultBuilder: (context, day, focusedDay) {
+                if (_datesWithNotes
+                    .contains(DateTime(day.year, day.month, day.day))) {
+                  return Container(
+                    margin: const EdgeInsets.all(4.0),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.blue[200],
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(day.day.toString()),
+                  );
+                } else {
+                  return null; // Uses default appearance
+                }
+              },
+            ),
           ),
           Padding(
             padding: const EdgeInsets.all(8.0),
