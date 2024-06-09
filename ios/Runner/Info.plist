@@ -13,9 +13,9 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>flutter_application_2</string>
+	<string>Ladjeroud Calendar</string>
 	<key>CFBundlePackageType</key>
-	<string>APPL</string>
+	<string>Ladjeroud Calendar</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>

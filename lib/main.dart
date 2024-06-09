@@ -15,16 +15,37 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Calendar Demo',
+      title: 'Ladjeroud Calendar',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        appBarTheme: AppBarTheme(
+          color: Colors.grey[850], // Dark grey for the AppBar in light theme
+          foregroundColor: Colors.white, // Ensures icons and text are visible
+          elevation: 0, // Removes shadow for a flatter appearance
+        ),
+        primarySwatch: Colors.grey,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
+          seedColor: Colors.grey,
           brightness: Brightness.light,
         ),
         useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Calendar Demo Home Page'),
+      darkTheme: ThemeData(
+        appBarTheme: AppBarTheme(
+          color: Colors
+              .grey[900], // Even darker shade for the AppBar in dark theme
+          foregroundColor: Colors.white, // Ensures icons and text are visible
+          elevation: 0, // Removes shadow for a flatter appearance
+        ),
+        primarySwatch: Colors.grey,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.grey,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+      ),
+      themeMode: ThemeMode.system,
+      home: const MyHomePage(title: 'Ladjeroud Calendar'),
     );
   }
 }
@@ -39,7 +60,7 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  DateTime _selectedDay = DateTime.now();
+  DateTime? _selectedDay;
   DateTime _focusedDay = DateTime.now();
   TextEditingController _noteController = TextEditingController();
   Set<DateTime> _datesWithNotes = {};
@@ -60,11 +81,14 @@ class _MyHomePageState extends State<MyHomePage> {
       Map<dynamic, dynamic>? data =
           event.snapshot.value as Map<dynamic, dynamic>?;
       if (data != null) {
+        _datesWithNotes.clear(); // Clear existing notes before adding new ones
         data.forEach((key, value) {
           int day = int.parse(key);
           DateTime date = DateTime(_focusedDay.year, _focusedDay.month, day);
           if (date.isAfter(startOfMonth.subtract(const Duration(days: 1))) &&
-              date.isBefore(endOfMonth.add(const Duration(days: 1)))) {
+              date.isBefore(endOfMonth.add(const Duration(days: 1))) &&
+              value != null &&
+              value['note'].toString().isNotEmpty) {
             _datesWithNotes.add(date);
           }
         });
@@ -87,7 +111,7 @@ class _MyHomePageState extends State<MyHomePage> {
     };
   }
 
-  void _onDaySelected(DateTime selectedDay, DateTime focusedDay) async {
+  void _onDaySelected(DateTime selectedDay, DateTime focusedDay) {
     setState(() {
       _selectedDay = selectedDay;
       _focusedDay = focusedDay;
@@ -96,28 +120,26 @@ class _MyHomePageState extends State<MyHomePage> {
     var dateParts = formatDateTime(selectedDay);
     DatabaseReference ref = FirebaseDatabase.instance.ref(
         'notes/${dateParts['year']}/${dateParts['month']}/${dateParts['day']}');
-    DatabaseEvent event = await ref.once();
-
-    Map<dynamic, dynamic>? data =
-        event.snapshot.value as Map<dynamic, dynamic>?;
-    setState(() {
-      _noteController.text = data?['note'] ?? '';
-      if (data != null && data['note'] != null) {
-        _datesWithNotes.add(
-            DateTime(selectedDay.year, selectedDay.month, selectedDay.day));
-      }
+    ref.once().then((DatabaseEvent event) {
+      Map<dynamic, dynamic>? data =
+          event.snapshot.value as Map<dynamic, dynamic>?;
+      setState(() {
+        _noteController.text = data?['note'] ?? '';
+        if (data != null && data['note'].toString().isEmpty) {
+          _datesWithNotes.remove(
+              DateTime(selectedDay.year, selectedDay.month, selectedDay.day));
+        } else if (data != null && data['note'].toString().isNotEmpty) {
+          _datesWithNotes.add(
+              DateTime(selectedDay.year, selectedDay.month, selectedDay.day));
+        }
+      });
     });
   }
 
   void _saveNote() async {
-    final text = _noteController.text;
-    if (text.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('No note to save')));
-      return;
-    }
+    final text = _noteController.text.trim();
+    var dateParts = formatDateTime(_selectedDay!);
 
-    var dateParts = formatDateTime(_selectedDay);
     DatabaseReference ref = FirebaseDatabase.instance.ref(
         'notes/${dateParts['year']}/${dateParts['month']}/${dateParts['day']}');
 
@@ -125,14 +147,18 @@ class _MyHomePageState extends State<MyHomePage> {
       'date': '${dateParts['year']}-${dateParts['month']}-${dateParts['day']}',
       'note': text,
     }).then((_) {
+      if (text.isEmpty) {
+        _datesWithNotes.remove(_selectedDay);
+      } else {
+        _datesWithNotes.add(DateTime(
+            _selectedDay!.year, _selectedDay!.month, _selectedDay!.day));
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Note saved successfully')));
-      _datesWithNotes.add(
-          DateTime(_selectedDay.year, _selectedDay.month, _selectedDay.day));
+          const SnackBar(content: Text('Note updated successfully')));
       setState(() {});
     }).catchError((error) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Failed to save note: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update note: $error')));
     });
   }
 
@@ -143,55 +169,87 @@ class _MyHomePageState extends State<MyHomePage> {
         title: Text(widget.title),
         backgroundColor: Theme.of(context).colorScheme.primary,
       ),
-      body: Column(
-        children: [
-          TableCalendar(
-            firstDay: DateTime.utc(2010, 10, 16),
-            lastDay: DateTime.utc(2030, 3, 14),
-            focusedDay: _focusedDay,
-            selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-            onDaySelected: _onDaySelected,
-            onPageChanged: (focusedDay) {
-              // Assuming onPageChanged exists and is triggered on month change
-              if (focusedDay.month != _focusedDay.month ||
-                  focusedDay.year != _focusedDay.year) {
-                _focusedDay = focusedDay;
-                _loadMonthNotes(); // Fetch notes for the new month
-              }
-            },
-            calendarBuilders: CalendarBuilders(
-              defaultBuilder: (context, day, focusedDay) {
-                if (_datesWithNotes
-                    .contains(DateTime(day.year, day.month, day.day))) {
-                  return Container(
-                    margin: const EdgeInsets.all(4.0),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: Colors.blue[200],
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(day.day.toString()),
-                  );
-                } else {
-                  return null; // Uses default appearance
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          setState(() {
+            _selectedDay = null; // Deselect the current day
+            _noteController.text = ''; // Clear the text field
+          });
+          _loadMonthNotes(); // Reload to update the calendar view
+        },
+        child: Column(
+          children: [
+            TableCalendar(
+              firstDay: DateTime.utc(2010, 10, 16),
+              lastDay: DateTime.utc(2030, 3, 14),
+              focusedDay: _focusedDay,
+              selectedDayPredicate: (day) =>
+                  _selectedDay != null && isSameDay(_selectedDay!, day),
+              onDaySelected: _onDaySelected,
+              onPageChanged: (focusedDay) {
+                if (focusedDay.month != _focusedDay.month ||
+                    focusedDay.year != _focusedDay.year) {
+                  _focusedDay = focusedDay;
+                  _loadMonthNotes(); // Fetch notes for the new month
                 }
               },
+              calendarBuilders: CalendarBuilders(
+                defaultBuilder: (context, day, focusedDay) {
+                  if (_datesWithNotes
+                      .contains(DateTime(day.year, day.month, day.day))) {
+                    return Container(
+                      margin: const EdgeInsets.all(4.0),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors
+                            .blue[200], // Background color for days with notes
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        day.day.toString(),
+                        style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight
+                                .bold), // Red text for days with notes
+                      ),
+                    );
+                  }
+                  return Center(
+                    child: Text(day.day.toString(),
+                        style: TextStyle(
+                            fontWeight: FontWeight
+                                .bold)), // Default appearance for days without notes
+                  );
+                },
+                todayBuilder: (context, day, focusedDay) {
+                  return Center(
+                    child: Text(
+                      day.day.toString(),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: TextField(
-              controller: _noteController,
-              decoration: InputDecoration(
-                labelText: 'Write a note',
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.save),
-                  onPressed: _saveNote,
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: TextField(
+                controller: _noteController,
+                decoration: InputDecoration(
+                  labelText: 'Write a note',
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.save),
+                    onPressed: _saveNote,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
