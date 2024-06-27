@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -65,10 +66,25 @@ class _MyHomePageState extends State<MyHomePage> {
   TextEditingController _noteController = TextEditingController();
   Set<DateTime> _datesWithNotes = {};
 
+  late FlutterLocalNotificationsPlugin localNotificationsPlugin;
+  String _lastNote = ''; // Track the last note to compare with the new note
+
   @override
   void initState() {
     super.initState();
+    _initializeNotifications();
     _loadMonthNotes();
+  }
+
+  void _initializeNotifications() {
+    localNotificationsPlugin = FlutterLocalNotificationsPlugin();
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    final InitializationSettings initializationSettings =
+        InitializationSettings(
+      android: initializationSettingsAndroid,
+    );
+    localNotificationsPlugin.initialize(initializationSettings);
   }
 
   void _loadMonthNotes() {
@@ -77,38 +93,46 @@ class _MyHomePageState extends State<MyHomePage> {
 
     DatabaseReference ref = FirebaseDatabase.instance.ref(
         'notes/${_focusedDay.year}/${_focusedDay.month.toString().padLeft(2, '0')}');
-    ref.once().then((DatabaseEvent event) {
-      Map<dynamic, dynamic>? data =
-          event.snapshot.value as Map<dynamic, dynamic>?;
-      if (data != null) {
-        _datesWithNotes.clear(); // Clear existing notes before adding new ones
-        data.forEach((key, value) {
-          int day = int.parse(key);
-          DateTime date = DateTime(_focusedDay.year, _focusedDay.month, day);
-          if (date.isAfter(startOfMonth.subtract(const Duration(days: 1))) &&
-              date.isBefore(endOfMonth.add(const Duration(days: 1))) &&
-              value != null &&
-              value['note'].toString().isNotEmpty) {
-            _datesWithNotes.add(date);
-          }
-        });
-        setState(() {});
-      }
+    ref.onValue.listen((DatabaseEvent event) {
+      final data = event.snapshot.value as Map<dynamic, dynamic>? ?? {};
+      _datesWithNotes.clear(); // Clear existing notes before adding new ones
+      data.forEach((key, value) {
+        int day = int.parse(key);
+        DateTime date = DateTime(_focusedDay.year, _focusedDay.month, day);
+        if (date.isAfter(startOfMonth.subtract(const Duration(days: 1))) &&
+            date.isBefore(endOfMonth.add(const Duration(days: 1))) &&
+            value['note'].toString().isNotEmpty) {
+          _datesWithNotes.add(date);
+          _showNotification(value['note']); // Show notification on new note
+        }
+      });
+      setState(() {});
     });
   }
 
-  @override
-  void dispose() {
-    _noteController.dispose();
-    super.dispose();
-  }
-
-  Map<String, String> formatDateTime(DateTime dateTime) {
-    return {
-      'year': dateTime.year.toString(),
-      'month': dateTime.month.toString().padLeft(2, '0'),
-      'day': dateTime.day.toString().padLeft(2, '0')
-    };
+  Future<void> _showNotification(String noteText) async {
+    if (noteText != _lastNote) {
+      // Check if the note is different from the last note
+      _lastNote = noteText; // Update the last note with the new note
+      const AndroidNotificationDetails androidPlatformChannelSpecifics =
+          AndroidNotificationDetails(
+        'note_id', // This is the channel ID
+        'New Note', // This is the channel name
+        channelDescription:
+            'Notification for new note added', // This needs to be a named argument
+        importance: Importance.max,
+        priority: Priority.high,
+        showWhen: false,
+      );
+      const NotificationDetails platformChannelSpecifics =
+          NotificationDetails(android: androidPlatformChannelSpecifics);
+      await localNotificationsPlugin.show(
+        0, // Notification ID
+        'New Note Added', // Title of the notification
+        noteText, // Body of the notification
+        platformChannelSpecifics, // This should be a named argument
+      );
+    }
   }
 
   void _onDaySelected(DateTime selectedDay, DateTime focusedDay) {
@@ -147,19 +171,19 @@ class _MyHomePageState extends State<MyHomePage> {
       'date': '${dateParts['year']}-${dateParts['month']}-${dateParts['day']}',
       'note': text,
     }).then((_) {
-      if (text.isEmpty) {
-        _datesWithNotes.remove(_selectedDay);
-      } else {
-        _datesWithNotes.add(DateTime(
-            _selectedDay!.year, _selectedDay!.month, _selectedDay!.day));
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Note updated successfully')));
-      setState(() {});
+      _lastNote = text; // Update the last saved note
+      // Other existing code
     }).catchError((error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update note: $error')));
+      // Other existing code
     });
+  }
+
+  Map<String, String> formatDateTime(DateTime dateTime) {
+    return {
+      'year': dateTime.year.toString(),
+      'month': dateTime.month.toString().padLeft(2, '0'),
+      'day': dateTime.day.toString().padLeft(2, '0')
+    };
   }
 
   @override
@@ -209,17 +233,14 @@ class _MyHomePageState extends State<MyHomePage> {
                       child: Text(
                         day.day.toString(),
                         style: TextStyle(
-                            color: Colors.red,
-                            fontWeight: FontWeight
-                                .bold), // Red text for days with notes
+                            color: Colors.red, // Red text for days with notes
+                            fontWeight: FontWeight.bold),
                       ),
                     );
                   }
                   return Center(
                     child: Text(day.day.toString(),
-                        style: TextStyle(
-                            fontWeight: FontWeight
-                                .bold)), // Default appearance for days without notes
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                   );
                 },
                 todayBuilder: (context, day, focusedDay) {
